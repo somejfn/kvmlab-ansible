@@ -1,0 +1,83 @@
+---
+
+- name: Viewing List of Current Domains
+  command: bash -c "virsh list --all"
+  become: true
+
+- name: Check the Cloud image is present
+  local_action: stat path="{{ kvm_images_path }}/{{ kvm_cloud_image_name }}"
+  register: result
+
+- name: fail if cloud image not present
+  fail: msg="Can not find cloud image at {{ kvm_images_path }}/{{ kvm_cloud_image_name }}"
+  when: result.stat.exists == False
+
+- name: Check the VM image is not present
+  local_action: stat path="{{ kvm_images_path }}/{{ item['name'] }}.qcow2"
+  with_items: "{{ kvm_vms }}"
+  register: vmdisk
+
+- name: Create Cloud init files from templates
+  file: path=/tmp/{{ item['name'] }} state=directory mode=0755
+  with_items: "{{ kvm_vms }}"
+
+- name: Create Cloud init files from templates
+  template: 
+     src: roles/kvm-infra/templates/meta-data.j2
+     dest: /tmp/{{ item['name'] }}/meta-data
+  with_items: "{{ kvm_vms }}"
+
+- name: Create Cloud init files from templates
+  template: 
+     src: roles/kvm-infra/templates/user-data-router.j2
+     dest: /tmp/{{ item['name'] }}/user-data
+  with_items: "{{ kvm_vms }}"
+  when: item['name'] == kvm_router['name']
+
+- name: Create Cloud init files from templates
+  template: 
+     src: roles/kvm-infra/templates/user-data.j2
+     dest: /tmp/{{ item['name'] }}/user-data
+  with_items: "{{ kvm_vms }}"
+  when: item['name'] != kvm_router['name']
+
+- name: Create Cloud init files from templates for router
+  template: 
+     src: roles/kvm-infra/templates/network-config-router.j2
+     dest: /tmp/{{ item['name'] }}/network-config
+  with_items: "{{ kvm_vms }}"
+  when: item['name'] == kvm_router['name']
+
+- name: Create Cloud init files from templates for guests
+  template: 
+     src: roles/kvm-infra/templates/network-config.j2
+     dest: /tmp/{{ item['name'] }}/network-config
+  with_items: "{{ kvm_vms }}"
+  when: item['name'] != kvm_router['name']
+
+- name: Prepare CLoud init config drive
+  command: bash -c "cd /tmp/{{ item['name'] }} ; genisoimage -o {{ kvm_images_path }}/{{ item['name'] }}.iso -V cidata -r -J meta-data user-data network-config"
+  become: true
+  with_items: "{{ kvm_vms }}"
+
+- name: fail if VM image is present
+  fail: msg="VM disk already exists {{ item.stat.path }}"
+  when: item.stat.exists == True
+  with_items: "{{ vmdisk.results }}"
+
+- name: Creating VM disk clones from cloud image
+  command: bash -c "qemu-img create -f qcow2 -F qcow2 -b {{ kvm_images_path }}/{{ kvm_cloud_image_name }} {{ kvm_images_path }}/{{ item['name'] }}.qcow2"
+  become: true
+  with_items: "{{ kvm_vms }}"
+
+- name: Creating router VM
+  command: bash -c "virt-install --virt-type=kvm --name={{ item['name'] }} --ram {{ item['memory'] }} --vcpus={{ item['vcpu'] }} --virt-type=kvm --hvm --os-variant {{ kvm_os_variant }} --network network={{ kvm_internal_network }} --network network={{ kvm_external_network }}  --nographics --disk {{ kvm_images_path }}/{{ item['name'] }}.qcow2 --disk path={{ kvm_images_path }}/{{ item['name'] }}.iso,device=cdrom --boot=hd --noautoconsole"
+  become: true
+  with_items: "{{ kvm_vms }}"
+  when: item['name'] == kvm_router['name']
+
+- name: Creating guest VMs
+  command: bash -c "virt-install --virt-type=kvm --name={{ item['name'] }} --ram {{ item['memory'] }} --vcpus={{ item['vcpu'] }} --virt-type=kvm --hvm --os-variant {{ kvm_os_variant }} --network network={{ kvm_internal_network }}  --nographics --disk {{ kvm_images_path }}/{{ item['name'] }}.qcow2 --disk path={{ kvm_images_path }}/{{ item['name'] }}.iso,device=cdrom --boot=hd --noautoconsole"
+  become: true
+  with_items: "{{ kvm_vms }}"
+  when: item['name'] != kvm_router['name']

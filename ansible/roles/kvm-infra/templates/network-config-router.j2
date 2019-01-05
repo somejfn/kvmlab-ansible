@@ -1,0 +1,15 @@
+version: 1
+config:
+   - type: physical
+     name: eth0
+     subnets:
+        - type: static
+          address: "{{ item['ip'] }}"
+          netmask: "{{ item['netmask'] }}"
+   - type: physical
+     name: eth1
+     subnets:
+        - type: static
+          address: "{{ kvm_router['ext_ip'] }}"
+          netmask: "{{ kvm_router['ext_netmask'] }}"
+          gateway: "{{ kvm_router['ext_gateway'] }}"

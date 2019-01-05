@@ -1,0 +1,5 @@
+<network>
+  <name>private</name>
+  <bridge name='virbr2' stp='on' delay='0'/>
+  <domain name='private'/>
+</network>

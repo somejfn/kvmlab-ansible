@@ -1,0 +1,82 @@
+#cloud-config
+
+write_files:
+- content: |
+      127.0.0.1 localhost localhost.localdomain
+  path: /etc/hosts
+- content: |
+      server=/{{ ingress_domain_name }}/127.0.0.1#9953
+  path: /etc/dnsmasq.d/02-forward.conf
+- content: |
+      { "iptables": false }
+  path: /etc/docker/daemon.json
+- content: |
+      net.ipv4.ip_forward=1
+      net.ipv6.conf.all.disable_ipv6=1
+      net.ipv6.conf.default.disable_ipv6=1
+      net.ipv4.conf.all.arp_filter=1
+  path: /etc/sysctl.d/66-router.conf
+- content: |
+      search jfn.edu
+      nameserver {{ kvm_router['ext_ip'] }}
+      nameserver 8.8.8.8
+  path: /etc/resolv.conf
+- content: |
+      # router BGP setup
+      [global.config]
+       as = 65001
+       router-id = "{{ item['ip'] }}"
+      [global.use-multiple-paths.config]
+       enabled = true
+      [[peer-groups]]
+       [peer-groups.config]
+        peer-group-name = "k8s-workers"
+        peer-as = 65002
+      [[peer-groups.afi-safis]]
+       [peer-groups.afi-safis.config]
+        afi-safi-name = "ipv4-unicast"
+       [[peer-groups.afi-safis]]
+       [peer-groups.afi-safis.config]
+        afi-safi-name = "ipv4-flowspec"
+      [[dynamic-neighbors]]
+       [dynamic-neighbors.config]
+        prefix = "{{ kvm_router['bgp_peer_range'] }}"
+        peer-group = "k8s-workers"
+      [zebra]
+      [zebra.config]
+        enabled = true
+        url = "unix:/var/run/quagga/zserv.api"
+        redistribute-route-type-list = ["connect"]
+        version = 2
+  path: /etc/gobgp.conf
+
+users:
+- name: "{{ vm_ssh_user }}"
+  shell: "/bin/bash"
+  groups:
+  - "wheel"
+  sudo: "ALL=(ALL) NOPASSWD:ALL"
+  ssh-authorized-keys: "{{ vm_ssh_pubkey }}"
+
+packages:
+- iptables-services
+- net-tools
+- docker
+- quagga
+- dnsmasq
+
+runcmd:
+- iptables -t nat -I POSTROUTING -s 192.168.200.0/24 -o eth1 -j MASQUERADE
+- systemctl enable iptables
+- systemctl start iptables
+- iptables-save
+- systemctl enable dnsmasq
+- systemctl start dnsmasq
+- systemctl enable docker
+- systemctl start docker
+- systemctl enable zebra
+- systemctl start zebra
+- docker run -d -v /etc/gobgp.conf:/etc/gobgp/gobgp.conf/ -v /var/run/quagga:/var/run/quagga --network=host --privileged --name bgp jfnadeau/gobgp:0.1
+- docker volume create mysql-data
+- docker run -d --name pdns-mysql -e MYSQL_ROOT_PASSWORD=supersecret -v mysql-data:/var/lib/mysql mariadb:10.1
+- docker run -d --name pdns --link pdns-mysql:mysql -p 9953:53 -p 9953:53/udp -p 9980:9980 -e MYSQL_USER=root -e MYSQL_PASS=supersecret psitrax/powerdns --cache-ttl=120 --webserver=yes --webserver-port=9980 --webserver-address=0.0.0.0 --webserver-allow-from=0.0.0.0/0 --api=yes --api-key=changeme

@@ -1,0 +1,26 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: external-dns
+spec:
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: external-dns
+    spec:
+      serviceAccountName: external-dns
+      containers:
+      - name: external-dns
+        image: registry.opensource.zalan.do/teapot/external-dns:latest
+        args:
+        - --source=service
+        - --source=ingress
+        - --provider=pdns
+        - --pdns-server=http://192.168.200.10:9980
+        - --pdns-api-key=changeme
+        - --txt-owner-id=clusterlab1
+        - --domain-filter=pub.jfn.edu
+        - --log-level=debug
+        - --interval=30s

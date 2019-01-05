@@ -1,0 +1,7 @@
+---
+- name:
+  hosts: kvm_host
+  connection: local
+  roles:
+    - kvm-infra
+  tasks:

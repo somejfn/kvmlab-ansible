@@ -1,0 +1,2 @@
+- import_tasks: roles/kvm-infra/tasks/create_vms.yml
+
