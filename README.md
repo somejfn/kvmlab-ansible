@@ -1,6 +1,6 @@
 # KVM Lab Ansible Playbook
 
-Build a set of virtual machines on a single KVM host specifically for deploying a K8s lab.  
+Build a set of virtual machines on a single KVM host specifically for deploying a K8s home lab.  
 
 My goal was to have a virtual infrastructure allowing to integrate a multi-node K8s cluster with:
 *  _metallb_ with BGP based routing and ECMP load balancing. This enables routable VIPs for services of type LoadBalancer such as an ingress controller.
@@ -16,15 +16,33 @@ System requirements:
 	- Ansible >=2.7
 	- Libvirtd with the virt-install and genisoimage utilities
   - 2 KVM networks defined to simulate a public and private segments (see sample XML files)
+  - The guest OS cloud image under the libvirt image directory. I.e. _CentOS-7-x86_64-GenericCloud.qcow2_
 
 
 # Usage
 
 See the defaults for the VMs defined under `ansible/roles/kvm-infra/defaults/main.yml`.  This builds the dual-homed router VM and 3 more KVM guests to be used as a K8s controller (node1) and 2 worker nodes (nodes[2-3])
 
-Make sure to update the SSH key in there as this is the only way to SSH in after deploying the playbook.
+Make sure to update the SSH key in there as this is the only way to SSH in after deploying the playbook. Then build the infrastructure with:
 
-Once the virtual infrastructure is up,  I suggest to deploy your K8s cluster easily with the excellent _kubeadm-ansible_ project.
+```
+ ansible-playbook configure-kvm-infra.yml -i inventory.ini
+```
+
+Once the virtual infrastructure is up,  I suggest to deploy your K8s cluster easily with the excellent _kubeadm-ansible_ project. A sample host.ini matching the nodes you have just setup would look like:
+
+```
+[master]
+192.168.200.31
+
+[node]
+192.168.200.[32:33]
+
+[kube-cluster:children]
+master
+node
+```
+
 
 Then install _helm_/_tiller_ on your cluster, _metallb_ and _external-dns_ (sample provided should work unmodified).
 
@@ -62,3 +80,19 @@ ip route
 ```
 
 Now you can curl it
+
+Note that if you install an ingress controller and wish _external-dns_ to properly register its LB service IP for each ingress resource, it must be started with:
+
+For _nginx_ingress_:
+
+```
+helm install stable/nginx-ingress -n nginx-ingress --namespace=ingress-system \
+ --set rbac.create=true --set controller.publishService.enabled=true
+```
+
+or for _traefik_:
+
+```
+helm install stable/traefik -n traefik --namespace=traefik-system \
+  --set rbac.enabled=true --set kubernetes.ingressEndpoint.useDefaultPublishedService=true
+```
