@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pdns-extdns
+spec:
+  selector:
+    matchLabels:
+      app: pdns-extdns
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: pdns-extdns
+    spec:
+      volumes:
+        - name: mysql-data
+          emptyDir: {}
+        - name: mysql-run
+          emptyDir: {}
+      containers:
+      - name: mariadb
+        image: mariadb:10.1
+        env:
+        - name: MYSQL_ROOT_PASSWORD
+          value: changeme
+        volumeMounts:
+          - name: mysql-data
+            mountPath: /var/lib/mysql
+          - name: mysql-run
+            mountPath: /var/run/mysqld
+      - name: pdns-mysql
+        image: psitrax/powerdns:v4.2.0
+        args:
+        - --cache-ttl=120
+        - --webserver=yes
+        - --webserver-port=9980
+        - --webserver-address=0.0.0.0
+        - --webserver-allow-from=0.0.0.0/0
+        - --api=yes
+        - --api-key=changeme
+        volumeMounts:
+          - name: mysql-run
+            mountPath: /run/mysqld
+        env:
+        - name: MYSQL_USER
+          value: root
+        - name: MYSQL_PASS
+          value: changeme
+        - name: MYSQL_HOST
+          value: localhost
+        - name: MYSQL_DB
+          value: pdns
+        ports:
+          - name: dns-udp
+            containerPort: 53
+            protocol: UDP
+          - name: dns-tcp
+            containerPort: 53
+            protocol: TCP
+          - name: api
+            containerPort: 9980
+            protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /
+            port: api
+        readinessProbe:
+          httpGet:
+            path: /
+            port: api
